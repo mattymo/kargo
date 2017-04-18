@@ -16,7 +16,14 @@ $vm_cpus = 1
 $shared_folders = {}
 $forwarded_ports = {}
 $subnet = "172.17.8"
-$box = "bento/ubuntu-14.04"
+$box = "bento/ubuntu-16.04"
+# The first three nodes are etcd servers
+$etcd_instances = $num_instances
+# The first two nodes are masters
+$kube_master_instances = $num_instances == 1 ? $num_instances : ($num_instances - 1)
+# All nodes are kube nodes
+$kube_node_instances = $num_instances
+$local_release_dir = "/vagrant/temp"
 
 host_vars = {}
 
@@ -38,6 +45,13 @@ if ! File.exist?(File.join(File.dirname($inventory), "hosts"))
   end
 end
 
+if Vagrant.has_plugin?("vagrant-proxyconf")
+    $no_proxy = ENV['NO_PROXY'] || ENV['no_proxy'] || "127.0.0.1,localhost"
+    (1..$num_instances).each do |i|
+        $no_proxy += ",#{$subnet}.#{i+100}"
+    end
+end
+
 Vagrant.configure("2") do |config|
   # always use Vagrants insecure key
   config.ssh.insert_key = false
@@ -51,6 +65,12 @@ Vagrant.configure("2") do |config|
   (1..$num_instances).each do |i|
     config.vm.define vm_name = "%s-%02d" % [$instance_name_prefix, i] do |config|
       config.vm.hostname = vm_name
+
+      if Vagrant.has_plugin?("vagrant-proxyconf")
+        config.proxy.http     = ENV['HTTP_PROXY'] || ENV['http_proxy'] || ""
+        config.proxy.https    = ENV['HTTPS_PROXY'] || ENV['https_proxy'] ||  ""
+        config.proxy.no_proxy = $no_proxy
+      end
 
       if $expose_docker_tcp
         config.vm.network "forwarded_port", guest: 2375, host: ($expose_docker_tcp + i - 1), auto_correct: true
@@ -75,12 +95,14 @@ Vagrant.configure("2") do |config|
 
       ip = "#{$subnet}.#{i+100}"
       host_vars[vm_name] = {
-        "ip" => ip,
-        "access_ip" => ip,
-        "flannel_interface" => ip,
-        "flannel_backend_type" => "host-gw",
-        "local_release_dir" => "/vagrant/temp",
-        "download_run_once" => "True"
+        "ip": ip,
+        "flannel_interface": ip,
+        "flannel_backend_type": "host-gw",
+        "local_release_dir" => $local_release_dir,
+        "download_run_once": "False",
+        # Override the default 'calico' with flannel.
+        # inventory/group_vars/k8s-cluster.yml
+        "kube_network_plugin": "flannel",
       }
       config.vm.network :private_network, ip: ip
 
@@ -99,12 +121,9 @@ Vagrant.configure("2") do |config|
           ansible.host_vars = host_vars
           #ansible.tags = ['download']
           ansible.groups = {
-            # The first three nodes should be etcd servers
-            "etcd" => ["k8s-0[1:3]"],
-            # The first two nodes should be masters
-            "kube-master" => ["k8s-0[1:2]"],
-            # all nodes should be kube nodes
-            "kube-node" => ["k8s-0[1:#{$num_instances}]"],
+            "etcd" => ["#{$instance_name_prefix}-0[1:#{$etcd_instances}]"],
+            "kube-master" => ["#{$instance_name_prefix}-0[1:#{$kube_master_instances}]"],
+            "kube-node" => ["#{$instance_name_prefix}-0[1:#{$kube_node_instances}]"],
             "k8s-cluster:children" => ["kube-master", "kube-node"],
           }
         end

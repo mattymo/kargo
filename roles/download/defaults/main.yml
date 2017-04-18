@@ -1,105 +1,246 @@
 ---
 local_release_dir: /tmp
 
-# if this is set to true will only download files once
+# if this is set to true will only download files once. Doesn't work
+# on Container Linux by CoreOS unless the download_localhost is true and localhost
+# is running another OS type. Default compress level is 1 (fastest).
 download_run_once: False
+download_compress: 1
+
+# if this is set to true, uses the localhost for download_run_once mode
+# (requires docker and sudo to access docker). You may want this option for
+# local caching of docker images or for Container Linux by CoreOS cluster nodes.
+# Otherwise, uses the first node in the kube-master group to store images
+# in the download_run_once mode.
+download_localhost: False
+
+# Always pull images if set to True. Otherwise check by the repo's tag/digest.
+download_always_pull: False
 
 # Versions
-kube_version: "v1.2.4"
-etcd_version: v2.2.5
-calico_version: v0.19.0
-calico_cni_version: v1.2.1
-weave_version: v1.5.0
+kube_version: v1.6.1
+etcd_version: v3.0.17
+#TODO(mattymo): Move calico versions to roles/network_plugins/calico/defaults
+# after migration to container download
+calico_version: "v1.1.0"
+calico_cni_version: "v1.6.2"
+calico_policy_version: "v0.5.4"
+weave_version: 1.8.2
+flannel_version: v0.6.2
+pod_infra_version: 3.0
 
 # Download URL's
-kubelet_download_url: "https://storage.googleapis.com/kargo/{{kube_version}}_kubernetes-kubelet"
-apiserver_download_url: "https://storage.googleapis.com/kargo/{{kube_version}}_kubernetes-apiserver"
-kubectl_download_url: "https://storage.googleapis.com/kargo/{{kube_version}}_kubernetes-kubectl"
-
 etcd_download_url: "https://storage.googleapis.com/kargo/{{etcd_version}}_etcd"
-calico_download_url: "https://storage.googleapis.com/kargo/{{calico_version}}_calico"
-calico_cni_download_url: "https://storage.googleapis.com/kargo/{{calico_cni_version}}_calico-cni-plugin"
-calico_cni_ipam_download_url: "https://storage.googleapis.com/kargo/{{calico_cni_version}}_calico-cni-plugin-ipam"
-weave_download_url: "https://storage.googleapis.com/kargo/{{weave_version}}_weave"
 
 # Checksums
-calico_checksum: "6db00c94619e82d878d348c4e1791f8d2f0db59075f6c8e430fefae297c54d96"
-calico_cni_checksum: "b2eeb45fdfce58394e3a0019dd4b74bebe4bb35ed6d7c399213297594f25e89e"
-calico_cni_ipam_checksum: "fd122bee97af3ed86fc18fa4d797da29be3a5857a526aa154b433e50d7b36845"
-weave_checksum: "28d2c4e2b1ad8600da69882501eba697679aea10a5e61c769aa3a9ee72b0d89a"
-etcd_checksum: "aa6037406257d2a1bc48ffa769afe7a4f8a04cc1ffcd36ef84f9ee8bc4eca756"
-kubectl_checksum: "dac61fbd506f7a17540feca691cd8a9d9d628d59661eebce788a50511f578897"
-kubelet_checksum: "4adaf40592248eef6fd4fa126464915ea41e624a70dc77178089760ed235e341"
-kube_apiserver_checksum: "6ac99b36b02968459e026fcfc234207c66064b5e11816b69dd8fc234b2ffec1e"
+etcd_checksum: "385afd518f93e3005510b7aaa04d38ee4a39f06f5152cd33bb86d4f0c94c7485"
+
+# Containers
+# Possible values: host, docker
+etcd_deployment_type: "docker"
+etcd_image_repo: "quay.io/coreos/etcd"
+etcd_image_tag: "{{ etcd_version }}"
+flannel_image_repo: "quay.io/coreos/flannel"
+flannel_image_tag: "{{ flannel_version }}"
+calicoctl_image_repo: "calico/ctl"
+calicoctl_image_tag: "{{ calico_version }}"
+calico_node_image_repo: "calico/node"
+calico_node_image_tag: "{{ calico_version }}"
+calico_cni_image_repo: "calico/cni"
+calico_cni_image_tag: "{{ calico_cni_version }}"
+calico_policy_image_repo: "calico/kube-policy-controller"
+calico_policy_image_tag: "{{ calico_policy_version }}"
+calico_rr_image_repo: "quay.io/calico/routereflector"
+calico_rr_image_tag: "v0.3.0"
+exechealthz_version: 1.1
+exechealthz_image_repo: "gcr.io/google_containers/exechealthz-amd64"
+exechealthz_image_tag: "{{ exechealthz_version }}"
+hyperkube_image_repo: "quay.io/coreos/hyperkube"
+hyperkube_image_tag: "{{ kube_version }}_coreos.0"
+pod_infra_image_repo: "gcr.io/google_containers/pause-amd64"
+pod_infra_image_tag: "{{ pod_infra_version }}"
+netcheck_tag: "v1.0"
+netcheck_agent_img_repo: "quay.io/l23network/k8s-netchecker-agent"
+netcheck_server_img_repo: "quay.io/l23network/k8s-netchecker-server"
+weave_kube_image_repo: "weaveworks/weave-kube"
+weave_kube_image_tag: "{{ weave_version }}"
+weave_npc_image_repo: "weaveworks/weave-npc"
+weave_npc_image_tag: "{{ weave_version }}"
+
+nginx_image_repo: nginx
+nginx_image_tag: 1.11.4-alpine
+dnsmasq_version: 2.72
+dnsmasq_image_repo: "andyshinn/dnsmasq"
+dnsmasq_image_tag: "{{ dnsmasq_version }}"
+kubednsmasq_version: 1.3
+kubednsmasq_image_repo: "gcr.io/google_containers/kube-dnsmasq-amd64"
+kubednsmasq_image_tag: "{{ kubednsmasq_version }}"
+kubedns_version: 1.7
+kubedns_image_repo: "gcr.io/google_containers/kubedns-amd64"
+kubedns_image_tag: "{{ kubedns_version }}"
+test_image_repo: busybox
+test_image_tag: latest
+elasticsearch_version: "v2.4.1"
+elasticsearch_image_repo: "gcr.io/google_containers/elasticsearch"
+elasticsearch_image_tag: "{{ elasticsearch_version }}"
+fluentd_version: "1.22"
+fluentd_image_repo: "gcr.io/google_containers/fluentd-elasticsearch"
+fluentd_image_tag: "{{ fluentd_version }}"
+kibana_version: "v4.6.1"
+kibana_image_repo: "gcr.io/google_containers/kibana"
+kibana_image_tag: "{{ kibana_version }}"
+
+helm_version: "v2.2.2"
+helm_image_repo: "lachlanevenson/k8s-helm"
+helm_image_tag: "{{ helm_version }}"
+tiller_version: "{{ helm_version }}"
+tiller_image_repo: "gcr.io/kubernetes-helm/tiller"
+tiller_image_tag: "{{ tiller_version }}"
 
 downloads:
-  calico:
-    dest: calico/bin/calicoctl
-    version: "{{calico_version}}"
-    sha256: "{{ calico_checksum }}"
-    source_url: "{{ calico_download_url }}"
-    url: "{{ calico_download_url }}"
-    owner: "root"
-    mode: "0755"
-  calico_cni_plugin:
-    dest: calico/bin/calico
-    version: "{{calico_cni_version}}"
-    sha256: "{{ calico_cni_checksum }}"
-    source_url: "{{ calico_cni_download_url }}"
-    url: "{{ calico_cni_download_url }}"
-    owner: "root"
-    mode: "0755"
-  calico_cni_plugin_ipam:
-    dest: calico/bin/calico-ipam
-    version: "{{calico_cni_version}}"
-    sha256: "{{ calico_cni_ipam_checksum }}"
-    source_url: "{{ calico_cni_ipam_download_url }}"
-    url: "{{ calico_cni_ipam_download_url }}"
-    owner: "root"
-    mode: "0755"
-  weave:
-    dest: weave/bin/weave
-    version: "{{weave_version}}"
-    source_url: "{{weave_download_url}}"
-    url: "{{weave_download_url}}"
-    sha256: "{{ weave_checksum }}"
-    owner: "root"
-    mode: "0755"
+  netcheck_server:
+    container: true
+    repo: "{{ netcheck_server_img_repo }}"
+    tag: "{{ netcheck_tag }}"
+    sha256: "{{ netcheck_server_digest_checksum|default(None) }}"
+    enabled: "{{ deploy_netchecker|bool }}"
+  netcheck_agent:
+    container: true
+    repo: "{{ netcheck_agent_img_repo }}"
+    tag: "{{ netcheck_tag }}"
+    sha256: "{{ netcheck_agent_digest_checksum|default(None) }}"
+    enabled: "{{ deploy_netchecker|bool }}"
   etcd:
     version: "{{etcd_version}}"
     dest: "etcd/etcd-{{ etcd_version }}-linux-amd64.tar.gz"
-    sha256: "{{ etcd_checksum }}"
+    sha256: >-
+      {%- if etcd_deployment_type in [ 'docker', 'rkt' ] -%}{{etcd_digest_checksum|default(None)}}{%- else -%}{{etcd_checksum}}{%- endif -%}
     source_url: "{{ etcd_download_url }}"
     url: "{{ etcd_download_url }}"
     unarchive: true
     owner: "etcd"
     mode: "0755"
-  kubernetes_kubelet:
-    version: "{{kube_version}}"
-    dest: kubernetes/bin/kubelet
-    sha256: "{{kubelet_checksum}}"
-    source_url: "{{ kubelet_download_url }}"
-    url: "{{ kubelet_download_url }}"
-    owner: "kube"
-    mode: "0755"
-  kubernetes_kubectl:
-    dest: kubernetes/bin/kubectl
-    version: "{{kube_version}}"
-    sha256: "{{kubectl_checksum}}"
-    source_url: "{{ kubectl_download_url }}"
-    url: "{{ kubectl_download_url }}"
-    owner: "kube"
-    mode: "0755"
-  kubernetes_apiserver:
-    dest: kubernetes/bin/kube-apiserver
-    version: "{{kube_version}}"
-    sha256: "{{kube_apiserver_checksum}}"
-    source_url: "{{ apiserver_download_url }}"
-    url: "{{ apiserver_download_url }}"
-    owner: "kube"
-    mode: "0755"
+    container: "{{ etcd_deployment_type in [ 'docker', 'rkt' ] }}"
+    repo: "{{ etcd_image_repo }}"
+    tag: "{{ etcd_image_tag }}"
+  hyperkube:
+    container: true
+    repo: "{{ hyperkube_image_repo }}"
+    tag: "{{ hyperkube_image_tag }}"
+    sha256: "{{ hyperkube_digest_checksum|default(None) }}"
+  flannel:
+    container: true
+    repo: "{{ flannel_image_repo }}"
+    tag: "{{ flannel_image_tag }}"
+    sha256: "{{ flannel_digest_checksum|default(None) }}"
+    enabled: "{{ kube_network_plugin == 'flannel' or kube_network_plugin == 'canal' }}"
+  calicoctl:
+    container: true
+    repo: "{{ calicoctl_image_repo }}"
+    tag: "{{ calicoctl_image_tag }}"
+    sha256: "{{ calicoctl_digest_checksum|default(None) }}"
+    enabled: "{{ kube_network_plugin == 'calico' or kube_network_plugin == 'canal' }}"
+  calico_node:
+    container: true
+    repo: "{{ calico_node_image_repo }}"
+    tag: "{{ calico_node_image_tag }}"
+    sha256: "{{ calico_node_digest_checksum|default(None) }}"
+    enabled: "{{ kube_network_plugin == 'calico' or kube_network_plugin == 'canal' }}"
+  calico_cni:
+    container: true
+    repo: "{{ calico_cni_image_repo }}"
+    tag: "{{ calico_cni_image_tag }}"
+    sha256: "{{ calico_cni_digest_checksum|default(None) }}"
+    enabled: "{{ kube_network_plugin == 'calico' or kube_network_plugin == 'canal' }}"
+  calico_policy:
+    container: true
+    repo: "{{ calico_policy_image_repo }}"
+    tag: "{{ calico_policy_image_tag }}"
+    sha256: "{{ calico_policy_digest_checksum|default(None) }}"
+    enabled: "{{ kube_network_plugin == 'canal' }}"
+  calico_rr:
+    container: true
+    repo: "{{ calico_rr_image_repo }}"
+    tag: "{{ calico_rr_image_tag }}"
+    sha256: "{{ calico_rr_digest_checksum|default(None) }}"
+    enabled: "{{ peer_with_calico_rr is defined and peer_with_calico_rr}} and kube_network_plugin == 'calico'"
+  weave_kube:
+    container: true
+    repo: "{{ weave_kube_image_repo }}"
+    tag: "{{ weave_kube_image_tag }}"
+    sha256: "{{ weave_kube_digest_checksum|default(None) }}"
+    enabled: "{{ kube_network_plugin == 'weave' }}"
+  weave_npc:
+    container: true
+    repo: "{{ weave_npc_image_repo }}"
+    tag: "{{ weave_npc_image_tag }}"
+    sha256: "{{ weave_npc_digest_checksum|default(None) }}"
+    enabled: "{{ kube_network_plugin == 'weave' }}"
+  pod_infra:
+    container: true
+    repo: "{{ pod_infra_image_repo }}"
+    tag: "{{ pod_infra_image_tag }}"
+    sha256: "{{ pod_infra_digest_checksum|default(None) }}"
+  nginx:
+    container: true
+    repo: "{{ nginx_image_repo }}"
+    tag: "{{ nginx_image_tag }}"
+    sha256: "{{ nginx_digest_checksum|default(None) }}"
+  dnsmasq:
+    container: true
+    repo: "{{ dnsmasq_image_repo }}"
+    tag: "{{ dnsmasq_image_tag }}"
+    sha256: "{{ dnsmasq_digest_checksum|default(None) }}"
+  kubednsmasq:
+    container: true
+    repo: "{{ kubednsmasq_image_repo }}"
+    tag: "{{ kubednsmasq_image_tag }}"
+    sha256: "{{ kubednsmasq_digest_checksum|default(None) }}"
+  kubedns:
+    container: true
+    repo: "{{ kubedns_image_repo }}"
+    tag: "{{ kubedns_image_tag }}"
+    sha256: "{{ kubedns_digest_checksum|default(None) }}"
+  testbox:
+    container: true
+    repo: "{{ test_image_repo }}"
+    tag: "{{ test_image_tag }}"
+    sha256: "{{ testbox_digest_checksum|default(None) }}"
+  exechealthz:
+    container: true
+    repo: "{{ exechealthz_image_repo }}"
+    tag: "{{ exechealthz_image_tag }}"
+    sha256: "{{ exechealthz_digest_checksum|default(None) }}"
+  elasticsearch:
+    container: true
+    repo: "{{ elasticsearch_image_repo }}"
+    tag: "{{ elasticsearch_image_tag }}"
+    sha256: "{{ elasticsearch_digest_checksum|default(None) }}"
+  fluentd:
+    container: true
+    repo: "{{ fluentd_image_repo }}"
+    tag: "{{ fluentd_image_tag }}"
+    sha256: "{{ fluentd_digest_checksum|default(None) }}"
+  kibana:
+    container: true
+    repo: "{{ kibana_image_repo }}"
+    tag: "{{ kibana_image_tag }}"
+    sha256: "{{ kibana_digest_checksum|default(None) }}"
+  helm:
+    container: true
+    repo: "{{ helm_image_repo }}"
+    tag: "{{ helm_image_tag }}"
+    sha256: "{{ helm_digest_checksum|default(None) }}"
+  tiller:
+    container: true
+    repo: "{{ tiller_image_repo }}"
+    tag: "{{ tiller_image_tag }}"
+    sha256: "{{ tiller_digest_checksum|default(None) }}"
 
 download:
+  container: "{{ file.container|default('false') }}"
+  repo: "{{ file.repo|default(None) }}"
+  tag: "{{ file.tag|default(None) }}"
   enabled: "{{ file.enabled|default('true') }}"
   dest: "{{ file.dest|default(None) }}"
   version: "{{ file.version|default(None) }}"

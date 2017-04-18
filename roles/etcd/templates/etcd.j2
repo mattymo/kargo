@@ -1,17 +1,20 @@
-ETCD_DATA_DIR="/var/lib/etcd"
-{% if inventory_hostname in groups['etcd'] %}
-{% set etcd = {} %}
-{%     for host in groups['etcd'] %}
-{%         if inventory_hostname == host %}
-{%             set _dummy = etcd.update({'name':"etcd"+loop.index|string}) %}
-{%         endif %}
-{%     endfor %}
-ETCD_ADVERTISE_CLIENT_URLS="http://{{ hostvars[inventory_hostname]['access_ip'] | default(hostvars[inventory_hostname]['ip'] | default( hostvars[inventory_hostname]['ansible_default_ipv4']['address'])) }}:2379"
-ETCD_INITIAL_ADVERTISE_PEER_URLS="http://{{ hostvars[inventory_hostname]['access_ip'] | default(hostvars[inventory_hostname]['ip'] | default( hostvars[inventory_hostname]['ansible_default_ipv4']['address']))  }}:2380"
-ETCD_INITIAL_CLUSTER_STATE="new"
-ETCD_INITIAL_CLUSTER_TOKEN="k8s_etcd"
-ETCD_LISTEN_PEER_URLS="http://{{ hostvars[inventory_hostname]['ip'] | default( hostvars[inventory_hostname]['ansible_default_ipv4']['address'])  }}:2380"
-ETCD_NAME="{{ etcd.name }}"
-{% endif %}
-ETCD_INITIAL_CLUSTER="{% for host in groups['etcd'] %}etcd{{ loop.index|string }}=http://{{ hostvars[host]['access_ip'] | default(hostvars[host]['ip'] | default(hostvars[host]['ansible_default_ipv4']['address'])) }}:2380{% if not loop.last %},{% endif %}{% endfor %}"
-ETCD_LISTEN_CLIENT_URLS="http://{{ hostvars[inventory_hostname]['ip'] | default( hostvars[inventory_hostname]['ansible_default_ipv4']['address'])  }}:2379,http://127.0.0.1:2379"
+#!/bin/bash
+{{ docker_bin_dir }}/docker run \
+  --restart=on-failure:5 \
+  --env-file=/etc/etcd.env \
+  --net=host \
+  -v /etc/ssl/certs:/etc/ssl/certs:ro \
+  -v {{ etcd_cert_dir }}:{{ etcd_cert_dir }}:ro \
+  -v {{ etcd_data_dir }}:/var/lib/etcd:rw \
+  {% if etcd_memory_limit is defined %}
+  --memory={{ etcd_memory_limit|regex_replace('Mi', 'M') }} \
+  {% endif %}
+  {% if etcd_cpu_limit is defined %}
+  --cpu-shares={{ etcd_cpu_limit|regex_replace('m', '') }} \
+  {% endif %}
+  --name={{ etcd_member_name | default("etcd") }} \
+  {{ etcd_image_repo }}:{{ etcd_image_tag }} \
+  {% if etcd_after_v3 %}
+  {{ etcd_container_bin_dir }}etcd \
+  {% endif %}
+  "$@"

@@ -1,45 +1,64 @@
-{% if ansible_service_mgr in ["sysvinit","upstart"] %}
-# Logging directory
-KUBE_LOGGING="--log-dir={{ kube_log_dir }} --logtostderr=true"
-{% else %}
 # logging to stderr means we get it in the systemd journal
 KUBE_LOGGING="--logtostderr=true"
-{% endif %}
-KUBE_LOG_LEVEL="--v={{ kube_log_level | default('2') }}"
-KUBE_ALLOW_PRIV="--allow_privileged=true"
-{% if inventory_hostname in groups['kube-node'] %}
-KUBELET_API_SERVER="--api_servers={% for host in groups['kube-master'] %}https://{{ hostvars[host]['access_ip'] | default(hostvars[host]['ip'] | default(hostvars[host]['ansible_default_ipv4']['address'])) }}:{{ kube_apiserver_port }}{% if not loop.last %},{% endif %}{% endfor %}"
-{% endif %}
+KUBE_LOG_LEVEL="--v={{ kube_log_level }}"
 # The address for the info server to serve on (set to 0.0.0.0 or "" for all interfaces)
-KUBELET_ADDRESS="--address=0.0.0.0"
+KUBELET_ADDRESS="--address={{ ip | default("0.0.0.0") }}"
 # The port for the info server to serve on
 # KUBELET_PORT="--port=10250"
 # You may leave this blank to use the actual hostname
-KUBELET_HOSTNAME="--hostname_override={{ inventory_hostname }}"
-{% if inventory_hostname in groups['kube-master'] and inventory_hostname not in groups['kube-node'] %}
-KUBELET_REGISTER_NODE="--register-node=false"
-{% endif %}
-# location of the api-server
-{% if dns_setup %}
-KUBELET_ARGS="--cluster_dns={{ dns_server }} --cluster_domain={{ dns_domain }} --kubeconfig={{ kube_config_dir}}/node-kubeconfig.yaml --config={{ kube_manifest_dir }}"
+KUBELET_HOSTNAME="--hostname-override={{ ansible_hostname }}"
+
+{# Base kubelet args #}
+{% set kubelet_args_base %}--pod-manifest-path={{ kube_manifest_dir }} \
+--pod-infra-container-image={{ pod_infra_image_repo }}:{{ pod_infra_image_tag }} \
+--kube-reserved cpu={{ kubelet_cpu_limit }},memory={{ kubelet_memory_limit|regex_replace('Mi', 'M') }} \
+--node-status-update-frequency={{ kubelet_status_update_frequency }} \
+{% if kube_version | version_compare('v1.6', '>=') %}
+--enable-cri={{ kubelet_enable_cri }} --cgroups-per-qos={{ kubelet_cgroups_per_qos }} \
+--enforce-node-allocatable='{{ kubelet_enforce_node_allocatable }}' {% endif %}{% endset %}
+
+{# DNS settings for kubelet #}
+{% if dns_mode == 'kubedns' %}
+{% set kubelet_args_cluster_dns %}--cluster_dns={{ skydns_server }}{% endset %}
+{% elif dns_mode == 'dnsmasq_kubedns' %}
+{% set kubelet_args_cluster_dns %}--cluster_dns={{ dns_server }}{% endset %}
 {% else %}
-KUBELET_ARGS="--kubeconfig={{ kube_config_dir}}/kubelet.kubeconfig --config={{ kube_manifest_dir }}"
+{% set kubelet_args_cluster_dns %}{% endset %}
 {% endif %}
-{% if kube_network_plugin is defined and kube_network_plugin in ["calico", "weave"] %}
-KUBELET_NETWORK_PLUGIN="--network_plugin=cni --network-plugin-dir=/etc/cni/net.d"
+{% set kubelet_args_dns %}{{ kubelet_args_cluster_dns }} --cluster_domain={{ dns_domain }} --resolv-conf={{ kube_resolv_conf }}{% endset %}
+
+{# Location of the apiserver #}
+{% set kubelet_args_kubeconfig %}--kubeconfig={{ kube_config_dir}}/node-kubeconfig.yaml --require-kubeconfig{% endset %}
+{% if standalone_kubelet|bool %}
+{# We are on a master-only host. Make the master unschedulable in this case. #}
+{% set kubelet_args_kubeconfig %}{{ kubelet_args_kubeconfig }} --register-schedulable=false{% endset %}
+{% endif %}
+
+{# Kubelet node labels #}
+{% if inventory_hostname in groups['kube-master'] %}
+{%   set node_labels %}--node-labels=node-role.kubernetes.io/master=true{% endset %}
+{%   if not standalone_kubelet|bool %}
+{%     set node_labels %}{{ node_labels }},node-role.kubernetes.io/node=true{% endset %}
+{%   endif %}
+{% else %}
+{%   set node_labels %}--node-labels=node-role.kubernetes.io/node=true{% endset %}
+{% endif %}
+
+KUBELET_ARGS="{{ kubelet_args_base }} {{ kubelet_args_dns }} {{ kubelet_args_kubeconfig }} {{ node_labels }} {% if kubelet_custom_flags is string %} {{kubelet_custom_flags}} {% else %}{% for flag in kubelet_custom_flags %} {{flag}} {% endfor %}{% endif %}"
+{% if kube_network_plugin is defined and kube_network_plugin in ["calico", "weave", "canal"] %}
+KUBELET_NETWORK_PLUGIN="--network-plugin=cni --network-plugin-dir=/etc/cni/net.d --cni-bin-dir=/opt/cni/bin"
 {% elif kube_network_plugin is defined and kube_network_plugin == "weave" %}
 DOCKER_SOCKET="--docker-endpoint=unix:/var/run/weave/weave.sock"
+{% elif kube_network_plugin is defined and kube_network_plugin == "cloud" %}
+# Please note that --reconcile-cidr is deprecated and a no-op in Kubernetes 1.5 but still required in 1.4
+KUBELET_NETWORK_PLUGIN="--hairpin-mode=promiscuous-bridge --network-plugin=kubenet --reconcile-cidr=true"
 {% endif %}
 # Should this cluster be allowed to run privileged docker containers
-KUBE_ALLOW_PRIV="--allow_privileged=true"
-{% if cloud_provider is defined and cloud_provider == "openstack" %}
+KUBE_ALLOW_PRIV="--allow-privileged=true"
+{% if cloud_provider is defined and cloud_provider in ["openstack", "azure", "vsphere"] %}
 KUBELET_CLOUDPROVIDER="--cloud-provider={{ cloud_provider }} --cloud-config={{ kube_config_dir }}/cloud_config"
+{% elif cloud_provider is defined and cloud_provider == "aws" %}
+KUBELET_CLOUDPROVIDER="--cloud-provider={{ cloud_provider }}"
 {% else %}
-{# TODO: gce and aws don't need the cloud provider to be set? #}
 KUBELET_CLOUDPROVIDER=""
-{% endif %}
-{% if ansible_service_mgr in ["sysvinit","upstart"] %}
-DAEMON_ARGS="$KUBE_LOGGING $KUBE_LOG_LEVEL $KUBE_ALLOW_PRIV $KUBELET_API_SERVER $KUBELET_ADDRESS \
-$KUBELET_HOSTNAME $KUBELET_REGISTER_NODE $KUBELET_ARGS $DOCKER_SOCKET $KUBELET_ARGS $KUBELET_NETWORK_PLUGIN \
-$KUBELET_CLOUDPROVIDER"
 {% endif %}

@@ -1,46 +1,50 @@
-# This directory is where all the additional scripts go
-# that Kubernetes normally puts in /srv/kubernetes.
-# This puts them in a sane location
-kube_script_dir: "{{ bin_dir }}/kubernetes-scripts"
+# change to 0.0.0.0 to enable insecure access from anywhere (not recommended)
+kube_apiserver_insecure_bind_address: 127.0.0.1
 
-# This directory is where all the additional config stuff goes
-# the kubernetes normally puts in /srv/kubernets.
-# This puts them in a sane location.
-# Editting this value will almost surely break something. Don't
-# change it. Things like the systemd scripts are hard coded to
-# look in here. Don't do it.
-kube_config_dir: /etc/kubernetes
+# resolv.conf to base dns config
+kube_resolv_conf: "/etc/resolv.conf"
 
-# This is where all the cert scripts and certs will be located
-kube_cert_dir: "{{ kube_config_dir }}/ssl"
+kube_proxy_mode: iptables
 
-# This is where all of the bearer tokens will be stored
-kube_token_dir: "{{ kube_config_dir }}/tokens"
+# If using the pure iptables proxy, SNAT everything. Note that it breaks any
+# policy engine.
+kube_proxy_masquerade_all: false
 
-# This is where to save basic auth file
-kube_users_dir: "{{ kube_config_dir }}/users"
+# These options reflect limitations of running kubelet in a container.
+# Modify at your own risk
+kubelet_enable_cri: false
+kubelet_cgroups_per_qos: false
+# Set to empty to avoid cgroup creation
+kubelet_enforce_node_allocatable: ""
 
-# This is where you can drop yaml/json files and the kubelet will run those
-# pods on startup
-kube_manifest_dir: "{{ kube_config_dir }}/manifests"
 
-# Logging directory (sysvinit systems)
-kube_log_dir: "/var/log/kubernetes"
-
-dns_domain: "{{ cluster_name }}"
-
-kube_proxy_mode: userspace
-
-hyperkube_image_repo: quay.io/smana/kubernetes-hyperkube
-hyperkube_image_tag: "v1.2.4"
-
-# IP address of the DNS server.
-# Kubernetes will create a pod with several containers, serving as the DNS
-# server and expose it under this IP address. The IP address must be from
-# the range specified as kube_service_addresses. This magic will actually
-# pick the 10th ip address in the kube_service_addresses range and use that.
-dns_server: "{{ kube_service_addresses|ipaddr('net')|ipaddr(253)|ipaddr('address') }}"
+# Limits for kube components and nginx load balancer app
+kubelet_memory_limit: 512M
+kubelet_cpu_limit: 100m
+kubelet_status_update_frequency: 10s
+kube_proxy_memory_limit: 2000M
+kube_proxy_cpu_limit: 500m
+kube_proxy_memory_requests: 64M
+kube_proxy_cpu_requests: 150m
+nginx_memory_limit: 512M
+nginx_cpu_limit: 300m
+nginx_memory_requests: 32M
+nginx_cpu_requests: 25m
 
 # kube_api_runtime_config:
 #   - extensions/v1beta1/daemonsets=true
 #   - extensions/v1beta1/deployments=true
+
+nginx_image_repo: nginx
+nginx_image_tag: 1.11.4-alpine
+
+etcd_config_dir: /etc/ssl/etcd
+
+# A port range to reserve for services with NodePort visibility.
+# Inclusive at both ends of the range.
+kube_apiserver_node_port_range: "30000-32767"
+
+kubelet_load_modules: false
+
+##Support custom flags to be passed to kubelet
+kubelet_custom_flags: []

@@ -1,14 +1,14 @@
 ---
 - name: Hosts | populate inventory into hosts file
-  lineinfile:
+  blockinfile:
     dest: /etc/hosts
-    regexp: "^{{ hostvars[item]['access_ip'] | default(hostvars[item]['ip'] | default(hostvars[item].ansible_default_ipv4.address)) }} {{ item }}$"
-    line: "{{ hostvars[item]['access_ip'] | default(hostvars[item]['ip'] | default(hostvars[item].ansible_default_ipv4.address)) }} {{ item }}"
+    block: |-
+      {% for item in (groups['k8s-cluster'] + groups['etcd'] + groups['calico-rr']|default([]))|unique -%}{{ hostvars[item]['access_ip'] | default(hostvars[item]['ip'] | default(hostvars[item]['ansible_default_ipv4']['address'])) }}{% if (item != hostvars[item]['ansible_hostname']) %} {{ hostvars[item]['ansible_hostname'] }} {{ hostvars[item]['ansible_hostname'] }}.{{ dns_domain }}{% endif %} {{ item }} {{ item }}.{{ dns_domain }}
+      {% endfor %}
     state: present
     create: yes
     backup: yes
-  when: hostvars[item].ansible_default_ipv4.address is defined
-  with_items: "{{ groups['all'] }}"
+    marker: "# Ansible inventory hosts {mark}"
 
 - name: Hosts | populate kubernetes loadbalancer address into hosts file
   lineinfile:
@@ -17,7 +17,7 @@
     line: "{{ loadbalancer_apiserver.address }} {{ apiserver_loadbalancer_domain_name| default('lb-apiserver.kubernetes.local') }}"
     state: present
     backup: yes
-  when: loadbalancer_apiserver is defined and apiserver_loadbalancer_domain_name is defined
+  when: loadbalancer_apiserver is defined and loadbalancer_apiserver.address is defined and apiserver_loadbalancer_domain_name is defined
 
 - name: Hosts | localhost ipv4 in hosts file
   lineinfile:

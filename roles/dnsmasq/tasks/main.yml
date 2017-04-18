@@ -1,13 +1,31 @@
 ---
+- include: pre_upgrade.yml
+
 - name: ensure dnsmasq.d directory exists
   file:
     path: /etc/dnsmasq.d
     state: directory
+  tags: bootstrap-os
 
 - name: ensure dnsmasq.d-available directory exists
   file:
     path: /etc/dnsmasq.d-available
     state: directory
+  tags: bootstrap-os
+
+- name: check system nameservers
+  shell: awk '/^nameserver/ {print $NF}' /etc/resolv.conf
+  changed_when: False
+  register: system_nameservers
+
+- name: init system_and_upstream_dns_servers
+  set_fact:
+    system_and_upstream_dns_servers: "{{ upstream_dns_servers|default([]) }}"
+
+- name: combine upstream_dns_servers and system nameservers (only for docker_dns)
+  set_fact:
+    system_and_upstream_dns_servers: "{{ system_and_upstream_dns_servers | union(system_nameservers.stdout_lines) | unique }}"
+  when: system_nameservers.stdout != "" and resolvconf_mode != 'host_resolvconf'
 
 - name: Write dnsmasq configuration
   template:
@@ -15,9 +33,16 @@
     dest: /etc/dnsmasq.d-available/01-kube-dns.conf
     mode: 0755
     backup: yes
+  register: dnsmasq_config
 
-- name: Stat dnsmasq configuration
-  stat: path=/etc/dnsmasq.d/01-kube-dns.conf
+- name: Stat dnsmasq link
+  stat:
+    path: /etc/dnsmasq.d-available/01-kube-dns.conf
+  register: dnsmasq_stat
+
+- name: Stat dnsmasq link
+  stat:
+    path: /etc/dnsmasq.d/01-kube-dns.conf
   register: sym
 
 - name: Move previous configuration
@@ -32,83 +57,33 @@
     state: link
 
 - name: Create dnsmasq manifests
-  template: src={{item.file}} dest=/etc/kubernetes/{{item.file}}
+  template:
+    src: "{{item.file}}"
+    dest: "{{kube_config_dir}}/{{item.file}}"
   with_items:
-    - {file: dnsmasq-ds.yml, type: ds}
-    - {file: dnsmasq-svc.yml, type: svc}
+    - {name: dnsmasq, file: dnsmasq-deploy.yml, type: deployment}
+    - {name: dnsmasq, file: dnsmasq-svc.yml, type: svc}
+    - {name: dnsmasq-autoscaler, file: dnsmasq-autoscaler.yml, type: deployment}
   register: manifests
-  when: inventory_hostname == groups['kube-master'][0]
+  delegate_to: "{{ groups['kube-master'][0] }}"
+  run_once: true
 
 - name: Start Resources
   kube:
-    name: dnsmasq
-    namespace: kube-system
+    name: "{{item.item.name}}"
+    namespace: "{{system_namespace}}"
     kubectl: "{{bin_dir}}/kubectl"
     resource: "{{item.item.type}}"
-    filename: /etc/kubernetes/{{item.item.file}}
+    filename: "{{kube_config_dir}}/{{item.item.file}}"
     state: "{{item.changed | ternary('latest','present') }}"
   with_items: "{{ manifests.results }}"
-  when: inventory_hostname == groups['kube-master'][0]
+  delegate_to: "{{ groups['kube-master'][0] }}"
+  run_once: true
 
 - name: Check for dnsmasq port (pulling image and running container)
   wait_for:
     host: "{{dns_server}}"
     port: 53
-    delay: 5
-  when: inventory_hostname == groups['kube-master'][0]
+    timeout: 180
+  when: inventory_hostname == groups['kube-node'][0] and groups['kube-node'][0] in ansible_play_hosts
 
-
-- name: check resolvconf
-  stat: path=/etc/resolvconf/resolv.conf.d/head
-  register: resolvconf
-
-- name: target resolv.conf file
-  set_fact:
-    resolvconffile: >-
-      {%- if resolvconf.stat.exists == True -%}/etc/resolvconf/resolv.conf.d/head{%- else -%}/etc/resolv.conf{%- endif -%}
-
-- name: Add search resolv.conf
-  lineinfile:
-    line: "search {{ [ 'default.svc.' + dns_domain, 'svc.' + dns_domain, dns_domain ] | join(' ') }}"
-    dest: "{{resolvconffile}}"
-    state: present
-    insertbefore: BOF
-    backup: yes
-    follow: yes
-
-- name: Add local dnsmasq to resolv.conf
-  lineinfile:
-    line: "nameserver {{dns_server}}"
-    dest: "{{resolvconffile}}"
-    state: present
-    insertafter: "^search.*$"
-    backup: yes
-    follow: yes
-
-- name: Add options to resolv.conf
-  lineinfile:
-    line: options {{ item }}
-    dest: "{{resolvconffile}}"
-    state: present
-    regexp: "^options.*{{ item }}$"
-    insertafter: EOF
-    backup: yes
-    follow: yes
-  with_items:
-    - timeout:2
-    - attempts:2
-
-- name: disable resolv.conf modification by dhclient
-  copy: src=dhclient_nodnsupdate dest=/etc/dhcp/dhclient-enter-hooks.d/nodnsupdate mode=0755 backup=yes
-  when: ansible_os_family == "Debian"
-
-- name: disable resolv.conf modification by dhclient
-  copy: src=dhclient_nodnsupdate dest=/etc/dhcp/dhclient.d/nodnsupdate mode=u+x backup=yes
-  when: ansible_os_family == "RedHat"
-
-- name: update resolvconf
-  command: resolvconf -u
-  changed_when: False
-  when: resolvconf.stat.exists == True
-
-- meta: flush_handlers

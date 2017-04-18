@@ -1,15 +1,36 @@
 ---
-- name: Flannel | Write flannel configuration
-  template:
-    src: network.json
-    dest: /etc/flannel-network.json
-    backup: yes
+- name: Flannel | Set Flannel etcd configuration
+  command: |-
+    {{ bin_dir }}/etcdctl --peers={{ etcd_access_addresses }} \
+    set /{{ cluster_name }}/network/config \
+    '{ "Network": "{{ kube_pods_subnet }}", "SubnetLen": {{ kube_network_node_prefix }}, "Backend": { "Type": "{{ flannel_backend_type }}" } }'
+  delegate_to: "{{groups['etcd'][0]}}"
+  run_once: true
+
+- name: Flannel | Create flannel certs directory
+  file:
+    dest: "{{ flannel_cert_dir }}"
+    state: directory
+    mode: 0750
+    owner: root
+    group: root
+
+- name: Flannel | Link etcd certificates for flanneld
+  file:
+    src: "{{ etcd_cert_dir }}/{{ item.s }}"
+    dest: "{{ flannel_cert_dir }}/{{ item.d }}"
+    state: hard
+    force: yes
+  with_items:
+    - {s: "ca.pem", d: "ca_cert.crt"}
+    - {s: "node-{{ inventory_hostname }}.pem", d: "cert.crt"}
+    - {s: "node-{{ inventory_hostname }}-key.pem", d: "key.pem"}
 
 - name: Flannel | Create flannel pod manifest
   template:
     src: flannel-pod.yml
-    dest: /etc/kubernetes/manifests/flannel-pod.manifest
-  notify: delete default docker bridge
+    dest: "{{kube_manifest_dir}}/flannel-pod.manifest"
+  notify: Flannel | delete default docker bridge
 
 - name: Flannel | Wait for flannel subnet.env file presence
   wait_for:
@@ -21,6 +42,7 @@
   shell: cat /run/flannel/subnet.env | awk -F'=' '$1 == "FLANNEL_SUBNET" {print $2}'
   register: flannel_subnet_output
   changed_when: false
+  check_mode: no
 
 - set_fact:
     flannel_subnet: "{{ flannel_subnet_output.stdout }}"
@@ -29,32 +51,33 @@
   shell: cat /run/flannel/subnet.env | awk -F'=' '$1 == "FLANNEL_MTU" {print $2}'
   register: flannel_mtu_output
   changed_when: false
+  check_mode: no
 
 - set_fact:
     flannel_mtu: "{{ flannel_mtu_output.stdout }}"
 
-- name: Flannel | Set docker daemon options
-  template:
-    src: docker
-    dest: "/etc/default/docker"
-    owner: root
-    group: root
-    mode: 0644
-  notify:
-    - restart docker
+- set_fact:
+    docker_options_file: >-
+      {%- if ansible_os_family == "Debian" -%}/etc/default/docker{%- elif ansible_os_family == "RedHat" -%}/etc/sysconfig/docker{%- endif -%}
+  tags: facts
 
-- name: Flannel | Create docker config symlink for CoreOS
+- set_fact:
+    docker_options_name: >-
+      {%- if ansible_os_family == "Debian" -%}DOCKER_OPTS{%- elif ansible_os_family == "RedHat" -%}other_args{%- endif -%}
+  tags: facts
+
+- set_fact:
+    docker_network_options: '"--bip={{ flannel_subnet }} --mtu={{ flannel_mtu }}"'
+
+- name: Flannel | Ensure path for docker network systemd drop-in
   file:
-    src: "/etc/default/docker"
-    dest: "/run/flannel_docker_opts.env"
-    state: link
-  when: ansible_os_family == "CoreOS"
+    path: "/etc/systemd/system/docker.service.d"
+    state: directory
+    owner: root
 
-- name: Flannel | Write docker.service systemd file
+- name: Flannel | Create docker network systemd drop-in
   template:
-    src: systemd-docker.service
-    dest: /lib/systemd/system/docker.service
-  notify: restart docker
-  when: ansible_service_mgr == "systemd" and ansible_os_family != "CoreOS"
-
-- meta: flush_handlers
+    src: flannel-options.conf.j2
+    dest: "/etc/systemd/system/docker.service.d/flannel-options.conf"
+  notify:
+    - Flannel | restart docker

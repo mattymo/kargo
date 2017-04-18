@@ -3,7 +3,7 @@
   apiVersion: "v1"
   metadata:
     name: "flannel"
-    namespace: "kube-system"
+    namespace: "{{system_namespace}}"
     labels:
       app: "flannel"
       version: "v0.1"
@@ -12,35 +12,33 @@
       - name: "subnetenv"
         hostPath:
           path: "/run/flannel"
-      - name: "networkconfig"
+      - name: "etcd-certs"
         hostPath:
-          path: "/etc/flannel-network.json"
+          path: "{{ flannel_cert_dir }}"
     containers:
-      - name: "flannel-server-helper"
-        image: "gcr.io/google_containers/flannel-server-helper:0.1"
-        args:
-          - "--network-config=/etc/flannel-network.json"
-          - "--etcd-prefix=/{{ cluster_name }}/network"
-          - "--etcd-server=http://{{ groups['etcd'][0] }}:2379"
-        volumeMounts:
-          - name: "networkconfig"
-            mountPath: "/etc/flannel-network.json"
-        imagePullPolicy: "Always"
       - name: "flannel-container"
-        image: "quay.io/coreos/flannel:0.5.5"
+        image: "{{ flannel_image_repo }}:{{ flannel_image_tag }}"
+        imagePullPolicy: {{ k8s_image_pull_policy }}
+        resources:
+          limits:
+            cpu: {{ flannel_cpu_limit }}
+            memory: {{ flannel_memory_limit }}
+          requests:
+            cpu: {{ flannel_cpu_requests }}
+            memory: {{ flannel_memory_requests }}
         command:
           - "/bin/sh"
           - "-c"
-          - "/opt/bin/flanneld -etcd-endpoints {% for srv in groups['etcd'] %}http://{{ srv }}:2379{% if not loop.last %},{% endif %}{% endfor %} -etcd-prefix /{{ cluster_name }}/network {% if flannel_interface is defined %}-iface {{ flannel_interface }}{% endif %} {% if flannel_public_ip is defined %}-public-ip {{ flannel_public_ip }}{% endif %} 1>>/var/log/flannel_server.log 2>&1"
+          - "/opt/bin/flanneld -etcd-endpoints {{ etcd_access_endpoint }} -etcd-prefix /{{ cluster_name }}/network -etcd-cafile {{ flannel_cert_dir }}/ca_cert.crt -etcd-certfile {{ flannel_cert_dir }}/cert.crt -etcd-keyfile {{ flannel_cert_dir }}/key.pem {% if flannel_interface is defined %}-iface {{ flannel_interface }}{% endif %} {% if flannel_public_ip is defined %}-public-ip {{ flannel_public_ip }}{% endif %}"
         ports:
           - hostPort: 10253
             containerPort: 10253
-        resources:
-          limits:
-            cpu: "100m"
         volumeMounts:
           - name: "subnetenv"
             mountPath: "/run/flannel"
+          - name: "etcd-certs"
+            mountPath: "{{ flannel_cert_dir }}"
+            readOnly: true
         securityContext:
           privileged: true
     hostNetwork: true
