@@ -1,0 +1,10 @@
+<network>
+  <name>default</name>
+  <bridge name="k8s-{{test_name}}"/>
+  <forward mode="nat"/>
+  <ip address="{{ test_subnet }}.1" netmask="255.255.255.0">
+    <dhcp>
+      <range start="{{ test_subnet }}.2" end="{{ test_subnet }}.254"/>
+    </dhcp>
+  </ip>
+</network>

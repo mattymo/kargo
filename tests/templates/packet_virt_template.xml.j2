@@ -1,0 +1,30 @@
+<domain type='kvm'>
+  <name>{{name}}</name>
+  <uuid>{{ lookup('lines','uuidgen') }}</uuid>
+  <memory unit='MiB'>{{ vm_memory}}</memory>
+  <currentMemory unit='MiB'>{{ vm_memory}}</currentMemory>
+  <vcpu>{{ vm_vcpu}}</vcpu>
+  <os>
+    <type arch='x86_64'>hvm</type>
+    <boot dev='hd'/>
+  </os>
+  <clock offset='utc'/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+  <devices>
+    <emulator>/usr/bin/kvm</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='{{disk.type|default("raw")}}'/>
+      <source file='/var/lib/libvirt/images/{{name}}.{{disk.type|default("raw")}}'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+    <controller type='ide' index='0' />
+    <interface type='network'>
+      <mac address='{{mac|default( "52:54:00"+lookup('lines', 'echo '+item.name+'| md5sum | sed \'s/\(..\)/\\1:/g\' | cut -b1-8'))}}'/>
+      <source network='k8s-{{test_name}}'/>
+      <model type='virtio'/>
+    </interface>
+    <memballoon model='virtio'/>
+  </devices>
+</domain>

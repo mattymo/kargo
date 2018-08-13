@@ -64,6 +64,12 @@ before_script:
   CI_PLATFORM: "do"
   SSH_USER: root
 
+.packet_variables: &packet_variables
+  PACKET_INI_PATH: ./tests/support/packet_net.ini
+  PACKET_INVENTORY: ./tests/scripts/packet_net.py
+  SSH_USER: root
+  CI_PLATFORM: "packet"
+  PACKET_TAG: "ci"
 
 .testcases: &testcases
   <<: *job
@@ -235,6 +241,11 @@ before_script:
     <<: *do_variables
   <<: *testcases
 
+.packet: &packet
+  variables:
+    <<: *packet_variables
+  <<: *testcases
+
 # Test matrix. Leave the comments for markup scripts.
 .coreos_calico_aio_variables: &coreos_calico_aio_variables
 # stage: deploy-part1
@@ -402,6 +413,16 @@ do_ubuntu-canal-ha:
   <<: *do
   variables:
     <<: *do_variables
+  when: manual
+  except: ['triggers']
+  only: ['master', /^pr-.*$/]
+
+packet_ubuntu-calico-ha:
+  stage: deploy-part2
+  <<: *job
+  <<: *packet
+  variables:
+    <<: *packet_variables
   when: manual
   except: ['triggers']
   only: ['master', /^pr-.*$/]

@@ -12,6 +12,9 @@ init-gce: $(HOME)/.ssh/id_rsa
 init-do: $(HOME)/.ssh/id_rsa
 	echo $(DO_PRIVATE_KEY) | base64 -d > $(HOME)/.ssh/id_rsa
 
+init-packet: $(HOME)/.ssh/id_rsa
+	echo $(PACKET_PRIVATE_KEY) | base64 -d > $(HOME)/.ssh/id_rsa
+
 create-gce: init-gce
 	ansible-playbook cloud_playbooks/create-gce.yml -i local_inventory/hosts.cfg -c local \
 	$(LOG_LEVEL) \
@@ -44,6 +47,21 @@ create-do: init-do
 
 delete-do:
 	ansible-playbook -i $(INVENTORY) cloud_playbooks/create-do.yml -c local \
+	$(LOG_LEVEL) \
+	-e @"files/${CI_JOB_NAME}.yml" \
+	-e state=absent \
+	-e test_id=${TEST_ID} \
+	-e inventory_path=$(INVENTORY)
+
+create-packet: init-packet
+	ansible-playbook cloud_playbooks/create-packet.yml -i ${PACKET_INVENTORY} -c local \
+	${LOG_LEVEL} \
+	-e @"files/${CI_JOB_NAME}.yml" \
+	-e inventory_path=$(INVENTORY) \
+	-e test_id=${TEST_ID}
+
+delete-packet:
+	ansible-playbook -i $(PACKET_INVENTORY) cloud_playbooks/create-packet.yml -c local \
 	$(LOG_LEVEL) \
 	-e @"files/${CI_JOB_NAME}.yml" \
 	-e state=absent \
