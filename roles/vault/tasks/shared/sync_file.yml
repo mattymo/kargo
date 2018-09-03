@@ -33,7 +33,8 @@
   with_items: "{{ sync_file_hosts|default() | unique }}"
   loop_control:
     loop_var: host_item
-  when: sync_file_stat.stat.exists|default()
+  run_once: true
+  when: hostvars[host_item]['sync_file_stat'] is defined and hostvars[host_item]['sync_file_stat'].stat.exists|default()
 
 - name: "sync_file | Combine all possible key file sync sources"
   set_fact:
@@ -41,7 +42,8 @@
   with_items: "{{ sync_file_hosts|default() | unique }}"
   loop_control:
     loop_var: host_item
-  when: sync_file_key_stat.stat.exists|default()
+  run_once: true
+  when: hostvars[host_item]['sync_file_key_stat'] is defined and hostvars[host_item]['sync_file_key_stat'].stat.exists|default()
 
 - name: "sync_file | Remove sync sources with files that do not match sync_file_srcs|first"
   set_fact:
@@ -80,7 +82,7 @@
     sync_file_results: "{{ sync_file_results|default([]) + [sync_file_result] }}"
 
 - include_tasks: sync.yml
-  when: not (sync_file_no_srcs or sync_file_unneeded)
+  when: sync_file_srcs is defined and sync_file_srcs|length > 0 and not sync_file_unneeded
 
 - name: "Unset local vars to avoid variable bleed into next iteration"
   set_fact:

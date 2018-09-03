@@ -1,6 +1,6 @@
 ---
 dependencies:
   - role: kubernetes/secrets
-    when: not kubeadm_enabled
+    when: not kubeadm_enabled or cert_management == "vault"
     tags:
       - k8s-secrets

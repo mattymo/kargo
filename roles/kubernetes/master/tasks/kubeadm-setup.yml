@@ -15,14 +15,14 @@
 
 - name: kubeadm | Check if kubeadm has already run
   stat:
-    path: "{{ kube_cert_dir }}/ca.key"
-  register: kubeadm_ca
+    path: "{{ kube_cert_dir }}/apiserver.crt"
+  register: kubeadm_apiserver_cert
 
 - name: kubeadm | Delete old admin.conf
   file:
     path: "{{ kube_config_dir }}/admin.conf"
     state: absent
-  when: not kubeadm_ca.stat.exists
+  when: not kubeadm_apiserver_cert.stat.exists
 
 - name: kubeadm | Delete old static pods
   file:
@@ -108,7 +108,9 @@
   register: kubeadm_init
   # Retry is because upload config sometimes fails
   retries: 3
-  when: inventory_hostname == groups['kube-master']|first and not kubeadm_ca.stat.exists
+  when:
+    - inventory_hostname == groups['kube-master']|first
+    - not kubeadm_apiserver_cert.stat.exists
   failed_when: kubeadm_init.rc != 0 and "field is immutable" not in kubeadm_init.stderr
   notify: Master | restart kubelet
 
@@ -125,8 +127,13 @@
   register: kubeadm_upgrade
   # Retry is because upload config sometimes fails
   retries: 3
-  when: inventory_hostname == groups['kube-master']|first and (kubeadm_config.changed and kubeadm_ca.stat.exists)
-  failed_when: kubeadm_upgrade.rc != 0 and "field is immutable" not in kubeadm_upgrade.stderr
+  when:
+    - inventory_hostname == groups['kube-master']|first
+    - kubeadm_config.changed
+    - kubeadm_apiserver_cert.stat.exists
+  failed_when:
+    - kubeadm_upgrade.rc != 0 
+    - '"field is immutable" not in kubeadm_upgrade.stderr'
   notify: Master | restart kubelet
 
 # FIXME(mattymo): remove when https://github.com/kubernetes/kubeadm/issues/433 is fixed
@@ -170,7 +177,9 @@
 - name: kubeadm | Init other uninitialized masters
   command: timeout -k 600s 600s {{ bin_dir }}/kubeadm init --config={{ kube_config_dir }}/kubeadm-config.{{ kubeadmConfig_api_version }}.yaml --ignore-preflight-errors=all
   register: kubeadm_init
-  when: inventory_hostname != groups['kube-master']|first and not kubeadm_ca.stat.exists
+  when:
+    - inventory_hostname != groups['kube-master']|first
+    - not kubeadm_apiserver_cert.stat.exists
   failed_when: kubeadm_init.rc != 0 and "field is immutable" not in kubeadm_init.stderr
   notify: Master | restart kubelet
 
@@ -184,7 +193,10 @@
     --allow-experimental-upgrades
     --allow-release-candidate-upgrades
   register: kubeadm_upgrade
-  when: inventory_hostname != groups['kube-master']|first and (kubeadm_config.changed and kubeadm_ca.stat.exists)
+  when:
+    - inventory_hostname != groups['kube-master']|first 
+    - kubeadm_config.changed
+    - kubeadm_apiserver_certstat.exists
   failed_when: kubeadm_upgrade.rc != 0 and "field is immutable" not in kubeadm_upgrade.stderr
   notify: Master | restart kubelet
 
