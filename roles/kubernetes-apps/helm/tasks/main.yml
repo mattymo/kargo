@@ -49,6 +49,7 @@
     {% if tiller_node_selectors is defined %} --node-selectors {{ tiller_node_selectors }}{% endif %}
     {% if tiller_override is defined %} --override {{ tiller_override }}{% endif %}
     {% if tiller_max_history is defined %} --history-max={{ tiller_max_history }}{% endif %}
+    --debug --dry-run
     | kubectl apply -f -
   changed_when: false
   when: tiller_override is defined
