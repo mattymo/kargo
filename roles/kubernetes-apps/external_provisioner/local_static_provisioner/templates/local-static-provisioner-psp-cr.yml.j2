@@ -1,0 +1,14 @@
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: psp:local-static-provisioner
+  namespace: {{ local_static_provisioner_namespace }}
+rules:
+  - apiGroups:
+    - policy
+    resourceNames:
+    - local-static-provisioner
+    resources:
+    - podsecuritypolicies
+    verbs:
+    - use

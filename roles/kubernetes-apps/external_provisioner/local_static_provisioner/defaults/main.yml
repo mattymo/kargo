@@ -1,0 +1,13 @@
+---
+local_static_provisioner_namespace: "kube-system"
+# Leverages Ansibles string to Python datatype casting. Otherwise the dict_key isn't substituted
+# see https://github.com/ansible/ansible/issues/17324
+local_static_provisioner_storage_classes: |
+  {
+    "{{ local_static_provisioner_storage_class | default('local-storage') }}": {
+      "host_dir": "{{ local_static_provisioner_base_dir | default ('/mnt/disks') }}",
+      "mount_dir": "{{ local_static_provisioner_mount_dir | default('/mnt/disks') }}",
+      "volumeMode": "Filesystem",
+      "fsType": "ext4"
+    }
+  }

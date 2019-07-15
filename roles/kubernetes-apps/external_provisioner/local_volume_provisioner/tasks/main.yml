@@ -1,4 +1,8 @@
 ---
+- name: Local Volume Provisioner | Show deprecation warning
+  debug:
+    msg: "Local volume provisioner is deprecated. Use local static provisioner instead."
+
 - name: Local Volume Provisioner | Ensure base dir is created on all hosts
   file:
     path: "{{ local_volume_provisioner_storage_classes[item.1].host_dir }}"

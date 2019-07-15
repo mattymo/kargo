@@ -1,0 +1,63 @@
+---
+- name: Local Static Provisioner | Ensure base dir is created on all hosts
+  file:
+    path: "{{ local_static_provisioner_storage_classes[item.1].host_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ local_static_provisioner_directory_mode }}"
+  delegate_to: "{{ item[0] }}"
+  with_nested:
+    - "{{ groups['k8s-cluster'] }}"
+    - "{{ local_static_provisioner_storage_classes.keys() | list }}"
+
+- name: Local Static Provisioner | Create addon dir
+  file:
+    path: "{{ kube_config_dir }}/addons/local_static_provisioner"
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Local Static Provisioner | Templates list
+  set_fact:
+    local_static_provisioner_templates:
+      - { name: local-static-provisioner-ns, file: local-static-provisioner-ns.yml, type: ns }
+      - { name: local-static-provisioner-sa, file: local-static-provisioner-sa.yml, type: sa }
+      - { name: local-static-provisioner-clusterrolebinding, file: local-static-provisioner-clusterrolebinding.yml, type: clusterrolebinding }
+      - { name: local-static-provisioner-cm, file: local-static-provisioner-cm.yml, type: cm }
+      - { name: local-static-provisioner-ds, file: local-static-provisioner-ds.yml, type: ds }
+      - { name: local-static-provisioner-sc, file: local-static-provisioner-sc.yml, type: sc }
+      - { name: local-static-provisioner-svc, file: local-static-provisioner-svc.yml, type: svc }
+    local_static_provisioner_templates_for_psp_not_system_ns:
+      - { name: local-static-provisioner-psp, file: local-static-provisioner-psp.yml, type: psp }
+      - { name: local-static-provisioner-psp-role, file: local-static-provisioner-psp-role.yml, type: role }
+      - { name: local-static-provisioner-psp-rb, file: local-static-provisioner-psp-rb.yml, type: rolebinding }
+
+- name: Local Static Provisioner | Insert extra templates to Local Static Provisioner templates list for PodSecurityPolicy
+  set_fact:
+    local_static_provisioner_templates: "{{ local_static_provisioner_templates[:2] + local_static_provisioner_templates_for_psp_not_system_ns + local_static_provisioner_templates[2:] }}"
+  when:
+    - podsecuritypolicy_enabled
+    - local_static_provisioner_namespace != "kube-system"
+
+- name: Local Static Provisioner | Create manifests
+  template:
+    src: "{{ item.file }}.j2"
+    dest: "{{ kube_config_dir }}/addons/local_static_provisioner/{{ item.file }}"
+  with_items: "{{ local_static_provisioner_templates }}"
+  register: local_static_provisioner_manifests
+  when: inventory_hostname == groups['kube-master'][0]
+
+- name: Local Static Provisioner | Apply manifests
+  kube:
+    name: "{{ item.item.name }}"
+    namespace: "{{ local_static_provisioner_namespace }}"
+    kubectl: "{{ bin_dir }}/kubectl"
+    resource: "{{ item.item.type }}"
+    filename: "{{ kube_config_dir }}/addons/local_static_provisioner/{{ item.item.file }}"
+    state: "latest"
+  with_items: "{{ local_static_provisioner_manifests.results }}"
+  when: inventory_hostname == groups['kube-master'][0]
+  loop_control:
+    label: "{{ item.item.file }}"
