@@ -1,13 +1,36 @@
 ---
-- name: Update server field in component kubeconfigs
-  lineinfile:
-    dest: "{{ kube_config_dir }}/{{ item }}.conf"
-    regexp: 'server:'
-    line: '    server: {{ kube_apiserver_endpoint }}'
-    backup: yes
-  with_items:
-    - controller-manager
-    - scheduler
-  when:
-    - not loadbalancer_apiserver is defined
-  notify: "Master | Restart kube-{{ item }}"
+- name: Create temporary directory
+  tempfile:
+    state: directory
+  register: kubeconfig_temp_dir
+
+- name: Test if correct apiserver is set in all kubeconfigs
+  shell: >-
+    grep -Fq "{{ kube_apiserver_endpoint }}" {{ kube_config_dir }}/admin.conf &&
+    grep -Fq "{{ kube_apiserver_endpoint }}" {{ kube_config_dir }}/controller-manager.conf &&
+    grep -Fq "{{ kube_apiserver_endpoint }}" {{ kube_config_dir }}/kubelet.conf &&
+    grep -Fq "{{ kube_apiserver_endpoint }}" {{ kube_config_dir }}/scheduler.conf
+  register: kubeconfig_correct_apiserver
+  failed_when: False
+
+- name: Generate new kubeconfigs with correct apiserver
+  command: >-
+    {{ bin_dir }}/kubeadm init phase kubeconfig all
+    --config {{ kube_config_dir }}/kubeadm-config.yaml
+    --kubeconfig-dir {{ kubeconfig_temp_dir.path }}
+  when: kubeconfig_correct_apiserver.rc != 0
+
+- name: Copy new kubeconfigs to kube config dir
+  synchronize:
+    src: "{{ kubeconfig_temp_dir.path }}/."
+    dest: "{{ kube_config_dir }}"
+  when: kubeconfig_correct_apiserver.rc != 0
+  notify: 
+    - "Master | Restart kube-controller-manager"
+    - "Master | Restart kube-scheduler"
+    - "Master | reload kubelet"
+
+- name: Cleanup temporary directory
+  file:
+    path: "{{ kubeconfig_temp_dir.path }}"
+    state: absent
